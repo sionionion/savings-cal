@@ -1,12 +1,82 @@
 // 저축 방식 선택에 따라 입력창을 활성/비활성 처리
 
 document.addEventListener("DOMContentLoaded", () => {
+  const calculatorTabs = Array.from(
+    document.querySelectorAll("[data-section=\"tabs\"] [data-calc-tab]")
+  );
+  const floatingTabs = document.getElementById("floatingTabs");
+  const floatingTabButtons = floatingTabs
+    ? Array.from(floatingTabs.querySelectorAll("[data-calc-tab]"))
+    : [];
+  const allTabButtons = [...calculatorTabs, ...floatingTabButtons];
+  const savingAmountTitle = document.getElementById("savingAmountTitle");
+  const calcSections = {
+    tabs: document.querySelector('[data-section="tabs"]'),
+    savingType: document.querySelector('[data-section="saving-type"]'),
+    savingAmount: document.querySelector('[data-section="saving-amount"]'),
+    savingPeriod: document.querySelector('[data-section="saving-period"]'),
+    target: document.querySelector('[data-section="target"]'),
+    rate: document.querySelector('[data-section="rate"]'),
+    interest: document.querySelector('[data-section="interest"]'),
+    result: document.querySelector('[data-section="result"]'),
+  };
+  const savingAmountFields = {
+    deposit: document.querySelector('[data-calc-field="deposit"]'),
+    monthly: document.querySelector('[data-calc-field="monthly"]'),
+  };
+  const calculatorLayouts = {
+    target: {
+      savingAmountTitle: "저축액",
+      order: [
+        "savingType",
+        "savingAmount",
+        "savingPeriod",
+        "rate",
+        "interest",
+        "result",
+      ],
+      show: {
+        savingType: true,
+        savingAmount: true,
+        savingPeriod: true,
+        target: false,
+        rate: true,
+        interest: true,
+        result: true,
+      },
+    },
+    monthly: {
+      savingAmountTitle: "월 납입액/예치금",
+      order: ["target", "savingType", "savingPeriod", "rate", "interest", "result"],
+      show: {
+        savingType: true,
+        savingAmount: false,
+        savingPeriod: true,
+        target: true,
+        rate: true,
+        interest: true,
+        result: true,
+      },
+    },
+    period: {
+      savingAmountTitle: "월 납입액/예치금",
+      order: ["savingType", "target", "savingAmount", "rate", "interest", "result"],
+      show: {
+        savingType: true,
+        savingAmount: true,
+        savingPeriod: false,
+        target: true,
+        rate: true,
+        interest: true,
+        result: true,
+      },
+    },
+  };
+  let activeCalculator = "target";
   const depositCheckbox = document.getElementById("typeDeposit");
   const installmentCheckbox = document.getElementById("typeInstallment");
   const periodMonthsCheckbox = document.getElementById("periodMonths");
   const periodYearsCheckbox = document.getElementById("periodYears");
-  const rateAnnualCheckbox = document.getElementById("rateAnnual");
-  const rateMonthlyCheckbox = document.getElementById("rateMonthly");
   const interestSimpleCheckbox = document.getElementById("interestSimple");
   const interestAnnualCompoundCheckbox = document.getElementById(
     "interestAnnualCompound"
@@ -32,33 +102,298 @@ document.addEventListener("DOMContentLoaded", () => {
   const interestRateError = document.getElementById("interestRateError");
   const targetAmountError = document.getElementById("targetAmountError");
 
-  const resultTargetAmount = document.getElementById("resultTargetAmount");
-  const resultSavingAmount = document.getElementById("resultSavingAmount");
-  const resultSavingPeriod = document.getElementById("resultSavingPeriod");
+  const resultLabel = document.getElementById("resultLabel");
+  const resultValue = document.getElementById("resultValue");
   const resultSummary = document.getElementById("resultSummary");
+  const resultGate = document.getElementById("resultGate");
+  const showResultButton = document.getElementById("showResultButton");
+  const resultGateMessage = document.getElementById("resultGateMessage");
+  const resultContent = document.getElementById("resultContent");
+  const resetInputsButton = document.getElementById("resetInputsButton");
+
+  const spendItems = Array.from(document.querySelectorAll(".spend-item"));
+  const spendInputs = document.getElementById("spend-inputs");
+  const spendSavingsInputs = document.getElementById("spend-savings-inputs");
+  const spendTableBody = document.getElementById("spend-table-body");
+  const topSpendItem = document.getElementById("topSpendItem");
+  const spendResultsButton = document.getElementById("spendResultsButton");
+  const spendWarningMessage = document.getElementById("spendWarningMessage");
+  const spendResultsContainer = document.getElementById("spend-results");
+  const principalSummary = document.getElementById("principalSummary");
+  const extraSummary = document.getElementById("extraSummary");
+  const extraSummaryNote = document.getElementById("extraSummaryNote");
+  const dataYear = document.getElementById("dataYear");
+  const dataQuarter = document.getElementById("dataQuarter");
+  const dataMembers = document.getElementById("dataMembers");
+  const householdOptions = Array.from(
+    document.querySelectorAll('input[name="household"]')
+  );
+  const stickyHeader = document.getElementById("stickyHeader");
+  const stickyHeaderText = document.getElementById("stickyHeaderText");
+  const spendBlock = document.getElementById("spend-block-1");
+
+  const headerMessages = [
+    "수입은 고정인데, 돈은 더 모으고 싶다면?",
+    "담뱃값 한 달에 5만 원... 아낀다면 얼마까지 모을 수 있을까?",
+    "덕질에 매달 20만 원 쓰는데... 많이 쓰는 편인가?",
+    "배달음식만 줄였어도 더 모을 수 있을 텐데...",
+  ];
+  let headerMessageIndex = 0;
+  const INTEREST_TAX_RATE = 0.154;
+  const AFTER_TAX_INTEREST_RATIO = 1 - INTEREST_TAX_RATE;
+  let resultVisible = false;
+  const data = {
+    "1인 가구": {
+      "가구원수": 1,
+      "가구주연령": 49,
+      "가구분포": 36,
+      "소득": 3097748,
+      "경상소득": 3040061,
+      "근로소득": 1984604,
+      "사업소득": 422590,
+      "재산소득": 20349,
+      "이전소득": 612518,
+      "비경상소득": 57687,
+      "가계지출": 2367628,
+      "소비지출": 1776314,
+      "식료품": 234527,
+      "주류 · 담배": 35226,
+      "의류 · 신발": 73130,
+      "주거 · 수도 · 광열": 327563,
+      "가정용품 · 가사서비스": 61011,
+      "의료": 125554,
+      "교통": 184306,
+      "통신": 110498,
+      "오락 · 문화": 113321,
+      "교육": 43816,
+      "외식 · 숙박": 328944,
+      "기타상품 · 서비스": 138419,
+      "비소비지출": 591314,
+      "처분가능소득": 2506434,
+      "흑자액": 730120,
+      "흑자율": 29,
+      "평균소비성향": 71,
+    },
+    "2인 가구": {
+      "가구원수": 2,
+      "가구주연령": 59,
+      "가구분포": 28,
+      "소득": 5237638,
+      "경상소득": 5089591,
+      "근로소득": 2786491,
+      "사업소득": 995310,
+      "재산소득": 88789,
+      "이전소득": 1219002,
+      "비경상소득": 148047,
+      "가계지출": 3776862,
+      "소비지출": 2774757,
+      "식료품": 489625,
+      "주류 · 담배": 37465,
+      "의류 · 신발": 115118,
+      "주거 · 수도 · 광열": 301115,
+      "가정용품 · 가사서비스": 122321,
+      "의료": 262439,
+      "교통": 354151,
+      "통신": 149368,
+      "오락 · 문화": 169887,
+      "교육": 79802,
+      "외식 · 숙박": 440657,
+      "기타상품 · 서비스": 252809,
+      "비소비지출": 1002105,
+      "처분가능소득": 4235533,
+      "흑자액": 1460776,
+      "흑자율": 35,
+      "평균소비성향": 66,
+    },
+    "3인 가구": {
+      "가구원수": 3,
+      "가구주연령": 52,
+      "가구분포": 19,
+      "소득": 7942409,
+      "경상소득": 7818032,
+      "근로소득": 5277065,
+      "사업소득": 1430320,
+      "재산소득": 81893,
+      "이전소득": 1028754,
+      "비경상소득": 124377,
+      "가계지출": 5568204,
+      "소비지출": 3948375,
+      "식료품": 594528,
+      "주류 · 담배": 46084,
+      "의류 · 신발": 159736,
+      "주거 · 수도 · 광열": 366840,
+      "가정용품 · 가사서비스": 199969,
+      "의료": 291041,
+      "교통": 444574,
+      "통신": 222735,
+      "오락 · 문화": 244595,
+      "교육": 355905,
+      "외식 · 숙박": 677766,
+      "기타상품 · 서비스": 344601,
+      "비소비지출": 1619828,
+      "처분가능소득": 6322581,
+      "흑자액": 2374206,
+      "흑자율": 38,
+      "평균소비성향": 62,
+    },
+    "4인 가구": {
+      "가구원수": 4,
+      "가구주연령": 49,
+      "가구분포": 15,
+      "소득": 8432077,
+      "경상소득": 8362548,
+      "근로소득": 6036710,
+      "사업소득": 1402579,
+      "재산소득": 43980,
+      "이전소득": 879278,
+      "비경상소득": 69529,
+      "가계지출": 6750656,
+      "소비지출": 4977953,
+      "식료품": 713946,
+      "주류 · 담배": 46859,
+      "의류 · 신발": 193911,
+      "주거 · 수도 · 광열": 461889,
+      "가정용품 · 가사서비스": 186660,
+      "의료": 321620,
+      "교통": 478812,
+      "통신": 274599,
+      "오락 · 문화": 298847,
+      "교육": 845575,
+      "외식 · 숙박": 797490,
+      "기타상품 · 서비스": 357746,
+      "비소비지출": 1772703,
+      "처분가능소득": 6659373,
+      "흑자액": 1681420,
+      "흑자율": 25,
+      "평균소비성향": 75,
+    },
+    "5인 이상": {
+      "가구원수": 5,
+      "가구주연령": 47,
+      "가구분포": 3,
+      "소득": 10265476,
+      "경상소득": 10018709,
+      "근로소득": 6728565,
+      "사업소득": 2073422,
+      "재산소득": 72688,
+      "이전소득": 1144034,
+      "비경상소득": 246767,
+      "가계지출": 7651519,
+      "소비지출": 5569240,
+      "식료품": 764604,
+      "주류 · 담배": 47906,
+      "의류 · 신발": 229825,
+      "주거 · 수도 · 광열": 418578,
+      "가정용품 · 가사서비스": 289647,
+      "의료": 418944,
+      "교통": 459173,
+      "통신": 276361,
+      "오락 · 문화": 321248,
+      "교육": 1089748,
+      "외식 · 숙박": 832598,
+      "기타상품 · 서비스": 420607,
+      "비소비지출": 2082279,
+      "처분가능소득": 8183196,
+      "흑자액": 2613957,
+      "흑자율": 32,
+      "평균소비성향": 68,
+    },
+  };
 
   // 선택된 저축 방식에 따라 입력창 상태를 바꾼다.
   function updateSavingAmountInputs() {
     const isDeposit = depositCheckbox.checked;
     const isInstallment = installmentCheckbox.checked;
+    const hasSavingAmountSection = calcSections.savingAmount
+      ? !calcSections.savingAmount.hidden
+      : false;
+
+    if (!hasSavingAmountSection) {
+      return;
+    }
 
     if (isDeposit) {
+      if (savingAmountFields.deposit) {
+        savingAmountFields.deposit.hidden = false;
+      }
+      if (savingAmountFields.monthly) {
+        savingAmountFields.monthly.hidden = true;
+      }
       depositInput.disabled = false;
       monthlyInput.disabled = true;
       clearInputState(monthlyInput, monthlyAmountMessage, monthlyAmountError);
+      updateInterestTypeAvailability();
       return;
     }
 
     if (isInstallment) {
+      if (savingAmountFields.deposit) {
+        savingAmountFields.deposit.hidden = true;
+      }
+      if (savingAmountFields.monthly) {
+        savingAmountFields.monthly.hidden = false;
+      }
       depositInput.disabled = true;
       monthlyInput.disabled = false;
       clearInputState(depositInput, depositAmountMessage, depositAmountError);
+      updateInterestTypeAvailability();
       return;
     }
 
-    // 아무것도 선택되지 않으면 둘 다 입력 가능
-    depositInput.disabled = false;
-    monthlyInput.disabled = false;
+    if (savingAmountFields.deposit) {
+      savingAmountFields.deposit.hidden = false;
+    }
+    if (savingAmountFields.monthly) {
+      savingAmountFields.monthly.hidden = false;
+    }
+    depositInput.disabled = true;
+    monthlyInput.disabled = true;
+    updateInterestTypeAvailability();
+  }
+
+  function setActiveCalculator(mode) {
+    const layout = calculatorLayouts[mode];
+    if (!layout) {
+      return;
+    }
+
+    activeCalculator = mode;
+    if (savingAmountTitle) {
+      savingAmountTitle.textContent = layout.savingAmountTitle;
+    }
+
+    allTabButtons.forEach((tab) => {
+      const isActive = tab.dataset.calcTab === mode;
+      tab.classList.toggle("is-active", isActive);
+      if (tab.hasAttribute("aria-selected")) {
+        tab.setAttribute("aria-selected", String(isActive));
+      }
+    });
+
+    if (calcSections.tabs) {
+      calcSections.tabs.style.order = 0;
+    }
+
+    Object.entries(calcSections).forEach(([key, section]) => {
+      if (!section || key === "tabs") {
+        return;
+      }
+      const shouldShow = layout.show[key] ?? true;
+      section.hidden = !shouldShow;
+      section.style.display = shouldShow ? "" : "none";
+      section.style.order = 99;
+    });
+
+    layout.order.forEach((key, index) => {
+      const section = calcSections[key];
+      if (!section) {
+        return;
+      }
+      section.style.order = index + 1;
+    });
+
+    updateSavingAmountInputs();
+    setResultVisibility(false);
   }
 
   // 기간 단위를 하나만 선택하도록 만든다.
@@ -69,17 +404,6 @@ document.addEventListener("DOMContentLoaded", () => {
     } else if (type === "years") {
       periodMonthsCheckbox.checked = false;
       periodYearsCheckbox.checked = true;
-    }
-  }
-
-  // 수익률 단위를 하나만 선택하도록 만든다.
-  function updateRateUnit(type) {
-    if (type === "annual") {
-      rateAnnualCheckbox.checked = true;
-      rateMonthlyCheckbox.checked = false;
-    } else if (type === "monthly") {
-      rateAnnualCheckbox.checked = false;
-      rateMonthlyCheckbox.checked = true;
     }
   }
 
@@ -100,47 +424,27 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // 적금 선택 시 연복리 선택을 막고, 기존 선택이 연복리라면 단리로 변경한다.
+  function updateInterestTypeAvailability() {
+    const isInstallment = installmentCheckbox.checked;
+
+    if (isInstallment && interestAnnualCompoundCheckbox.checked) {
+      updateInterestType("simple");
+    }
+
+    interestAnnualCompoundCheckbox.disabled = isInstallment;
+    updatePeriodUnitAvailability();
+  }
+
   // 연복리일 때 기간 단위를 년으로 고정한다.
   function updatePeriodUnitAvailability() {
     if (interestAnnualCompoundCheckbox.checked) {
       updatePeriodUnit("years");
       periodMonthsCheckbox.disabled = true;
-      rateMonthlyCheckbox.disabled = true;
-      updateRateUnit("annual");
       return;
     }
 
     periodMonthsCheckbox.disabled = false;
-    rateMonthlyCheckbox.disabled = false;
-  }
-
-  // 계산 가능한 값이 모두 입력되면 해당 입력창을 비활성화한다.
-  function updateComputedInputStates() {
-    const savingType = getSavingType();
-    const hasPeriodUnit = periodMonthsCheckbox.checked || periodYearsCheckbox.checked;
-    const hasRateUnit = rateAnnualCheckbox.checked || rateMonthlyCheckbox.checked;
-    const savingAmountReady =
-      savingType === "deposit"
-        ? isPositiveNumber(depositInput)
-        : savingType === "installment"
-          ? isPositiveNumber(monthlyInput)
-          : false;
-    const targetReady = isPositiveNumber(targetAmountInput);
-    const periodReady = hasPeriodUnit && isPositiveNumber(savingPeriodInput);
-    const rateReady = hasRateUnit && isRateValueReady();
-    targetAmountInput.disabled =
-      savingAmountReady && periodReady && rateReady;
-
-    if (savingType === "deposit") {
-      depositInput.disabled =
-        targetReady && periodReady && rateReady;
-    } else if (savingType === "installment") {
-      monthlyInput.disabled =
-        targetReady && periodReady && rateReady;
-    }
-
-    savingPeriodInput.disabled =
-      targetReady && savingAmountReady && rateReady;
   }
 
   // 입력 상태를 초기화한다.
@@ -148,21 +452,6 @@ document.addEventListener("DOMContentLoaded", () => {
     input.value = "";
     messageElement.textContent = "";
     errorElement.textContent = "";
-  }
-
-  // 숫자가 0보다 큰지 확인한다.
-  function isPositiveNumber(input) {
-    const parsed = parseNumber(input.value);
-    return parsed !== null && parsed > 0;
-  }
-
-  // 수익률 입력이 비었거나 숫자로 입력됐는지 확인한다.
-  function isRateValueReady() {
-    const rawValue = interestRateInput.value.trim();
-    if (rawValue === "") {
-      return true;
-    }
-    return parseNumber(rawValue) !== null;
   }
 
   // 입력값을 숫자로 변환한다.
@@ -232,20 +521,149 @@ document.addEventListener("DOMContentLoaded", () => {
     return rawRate / 100;
   }
 
-  // 월 이자율을 반환 (연 이자율 선택 시에만 12로 나눈다)
+  // 월 이자율을 반환 (연 이자율을 12로 나눈다)
   function getMonthlyRate() {
-    const rate = getRateValue();
-    if (rateAnnualCheckbox.checked) {
-      return rate / 12;
-    }
-    return rate;
+    return getRateValue() / 12;
+  }
+
+  function getAfterTaxAmount(totalAmount, principalAmount) {
+    const interest = Math.max(totalAmount - principalAmount, 0);
+    return totalAmount - interest * INTEREST_TAX_RATE;
+  }
+
+  function getAfterTaxFactor(grossFactor, principalFactor) {
+    return (
+      grossFactor * AFTER_TAX_INTEREST_RATIO +
+      principalFactor * INTEREST_TAX_RATE
+    );
   }
 
   // 이자에 대한 세금(15.4%)을 반영해 최종 금액을 반환한다.
   function applyInterestTax(totalAmount, principalAmount) {
-    const interest = Math.max(totalAmount - principalAmount, 0);
-    const netAmount = totalAmount - interest * 0.154;
-    return Math.round(netAmount);
+    return Math.round(getAfterTaxAmount(totalAmount, principalAmount));
+  }
+
+  function getInstallmentMonthlyCompoundNetAmount(
+    monthlySavingAmount,
+    monthlyRate,
+    months
+  ) {
+    if (monthlyRate === 0) {
+      return monthlySavingAmount * months;
+    }
+
+    const growthBase = 1 + monthlyRate;
+    const grossFactor =
+      growthBase * ((Math.pow(growthBase, months) - 1) / monthlyRate);
+    const netFactor = getAfterTaxFactor(grossFactor, months);
+    return monthlySavingAmount * netFactor;
+  }
+
+  function getInstallmentAnnualCompoundNetAmount(
+    monthlySavingAmount,
+    annualRate,
+    months
+  ) {
+    if (annualRate === 0) {
+      return monthlySavingAmount * months;
+    }
+
+    const years = months / 12;
+    const grossFactor =
+      (1 + annualRate) *
+      ((Math.pow(1 + annualRate, years) - 1) / annualRate);
+    const netFactor = getAfterTaxFactor(grossFactor, months);
+    return monthlySavingAmount * netFactor;
+  }
+
+  function solveInstallmentMonthlyCompoundMonths(
+    targetAmount,
+    monthlySavingAmount,
+    monthlyRate
+  ) {
+    if (targetAmount <= 0 || monthlySavingAmount <= 0) {
+      return null;
+    }
+
+    if (monthlyRate === 0) {
+      return targetAmount / monthlySavingAmount;
+    }
+
+    let lower = 0;
+    let upper = 1;
+    while (
+      getInstallmentMonthlyCompoundNetAmount(
+        monthlySavingAmount,
+        monthlyRate,
+        upper
+      ) < targetAmount
+    ) {
+      upper *= 2;
+      if (upper > 1200000) {
+        return null;
+      }
+    }
+
+    for (let i = 0; i < 80; i += 1) {
+      const mid = (lower + upper) / 2;
+      const midAmount = getInstallmentMonthlyCompoundNetAmount(
+        monthlySavingAmount,
+        monthlyRate,
+        mid
+      );
+      if (midAmount >= targetAmount) {
+        upper = mid;
+      } else {
+        lower = mid;
+      }
+    }
+
+    return upper;
+  }
+
+  function solveInstallmentAnnualCompoundMonths(
+    targetAmount,
+    monthlySavingAmount,
+    annualRate
+  ) {
+    if (targetAmount <= 0 || monthlySavingAmount <= 0) {
+      return null;
+    }
+
+    if (annualRate === 0) {
+      return targetAmount / monthlySavingAmount;
+    }
+
+    let lower = 0;
+    let upper = 12;
+    while (
+      getInstallmentAnnualCompoundNetAmount(
+        monthlySavingAmount,
+        annualRate,
+        upper
+      ) < targetAmount
+    ) {
+      upper *= 2;
+      if (upper > 1200000) {
+        return null;
+      }
+    }
+
+    for (let i = 0; i < 80; i += 1) {
+      const mid = (lower + upper) / 2;
+      const midAmount = getInstallmentAnnualCompoundNetAmount(
+        monthlySavingAmount,
+        annualRate,
+        mid
+      );
+      if (midAmount >= targetAmount) {
+        upper = mid;
+      } else {
+        lower = mid;
+      }
+    }
+
+    return upper;
   }
 
   // 숫자를 보기 좋은 형식으로 변환한다.
@@ -326,6 +744,302 @@ document.addEventListener("DOMContentLoaded", () => {
     return parts.join(" ");
   }
 
+  function getSelectedSpendItems() {
+    return spendItems.filter((item) => item.checked).map((item) => item.value);
+  }
+
+  function getSelectedHouseholdLabel() {
+    const selectedOption = householdOptions.find((option) => option.checked);
+    if (!selectedOption) {
+      return "1인 가구";
+    }
+    return selectedOption.parentElement.textContent.trim();
+  }
+
+  function renderSpendInputs() {
+    const selected = getSelectedSpendItems();
+    const previousValues = getSpendInputValues();
+    spendInputs.innerHTML = "";
+
+    if (selected.length === 0) {
+      spendInputs.innerHTML =
+        '<p class="helper-text">선택한 항목이 여기에 표시됩니다.</p>';
+      return;
+    }
+
+    selected.forEach((item) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "input-group";
+
+      const label = document.createElement("label");
+      label.textContent = item;
+
+      const line = document.createElement("div");
+      line.className = "inline-input";
+
+      const text = document.createElement("span");
+      text.textContent = "한 달에";
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.inputMode = "decimal";
+      input.placeholder = "숫자 입력";
+      input.dataset.spendItem = item;
+      if (previousValues[item] !== undefined && previousValues[item] !== null) {
+        input.value = formatWithComma(String(previousValues[item]), false);
+      }
+
+      const unit = document.createElement("span");
+      unit.textContent = "원";
+
+      const error = document.createElement("p");
+      error.className = "helper-text";
+
+      line.append(text, input, unit);
+      wrapper.append(label, line, error);
+      spendInputs.append(wrapper);
+
+      input.addEventListener("input", () => {
+        handleNumericInput({
+          input,
+          messageElement: { textContent: "" },
+          errorElement: error,
+          allowDecimal: false,
+          showCurrencyMessage: false,
+        });
+        renderSpendSavingsInputs();
+        updateSpendTable();
+        updateTopSpendItem();
+      });
+    });
+  }
+
+  function renderSpendSavingsInputs() {
+    const selected = getSelectedSpendItems();
+    const spendValues = getSpendInputValues();
+    const previousValues = {};
+    const existingInputs = spendSavingsInputs.querySelectorAll(
+      "input[data-saving-item]"
+    );
+    existingInputs.forEach((input) => {
+      previousValues[input.dataset.savingItem] = parseNumber(input.value);
+    });
+    spendSavingsInputs.innerHTML = "";
+
+    if (selected.length === 0) {
+      spendSavingsInputs.innerHTML =
+        '<p class="helper-text">선택한 항목이 여기에 표시됩니다.</p>';
+      updateSavingsInsights();
+      return;
+    }
+
+    selected.forEach((item) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "input-group";
+
+      const line = document.createElement("div");
+      line.className = "inline-input";
+
+      const text = document.createElement("span");
+      text.textContent = "한 달에";
+
+      const badge = document.createElement("span");
+      badge.className = "inline-chip";
+      badge.textContent = item;
+
+      const input = document.createElement("input");
+      input.type = "range";
+      input.className = "spend-savings-slider";
+      input.dataset.savingItem = item;
+      input.min = "0";
+      input.step = "1000";
+
+      const averageValueRaw = spendValues[item];
+      const maxValue =
+        typeof averageValueRaw === "number" && averageValueRaw > 0
+          ? Math.round(averageValueRaw)
+          : 0;
+      input.max = String(maxValue);
+
+      let initialValue = 0;
+      const previousValue = previousValues[item];
+      if (typeof previousValue === "number" && previousValue >= 0) {
+        initialValue = Math.min(previousValue, maxValue);
+      }
+      input.value = String(initialValue);
+
+      const valueText = document.createElement("span");
+      valueText.className = "slider-value";
+      valueText.textContent = formatNumber(initialValue);
+
+      const unit = document.createElement("span");
+      unit.textContent = "원 아낄게요";
+
+      const error = document.createElement("p");
+      error.className = "helper-text spend-savings-helper";
+      error.textContent =
+        maxValue > 0
+          ? `최대 ${formatNumber(maxValue)}원까지 설정할 수 있어요.`
+          : "설정 가능한 금액이 없어요.";
+
+      line.append(text, badge, input, valueText, unit);
+      wrapper.append(line, error);
+      spendSavingsInputs.append(wrapper);
+
+      input.addEventListener("input", () => {
+        const currentValue = parseNumber(input.value) ?? 0;
+        valueText.textContent = formatNumber(Math.round(currentValue));
+        updateSavingsInsights();
+      });
+    });
+
+    updateSavingsInsights();
+  }
+
+  function getSpendInputValues() {
+    const values = {};
+    const inputs = spendInputs.querySelectorAll("input[data-spend-item]");
+    inputs.forEach((input) => {
+      const key = input.dataset.spendItem;
+      values[key] = parseNumber(input.value);
+    });
+    return values;
+  }
+
+  function getSpendSavingsValues() {
+    const values = {};
+    const inputs = spendSavingsInputs.querySelectorAll("input[data-saving-item]");
+    inputs.forEach((input) => {
+      const key = input.dataset.savingItem;
+      values[key] = parseNumber(input.value);
+    });
+    return values;
+  }
+
+  function getTotalSpendSavingsPerMonth() {
+    const values = getSpendSavingsValues();
+    return Object.values(values).reduce((sum, value) => {
+      if (typeof value !== "number" || value <= 0) {
+        return sum;
+      }
+      return sum + value;
+    }, 0);
+  }
+
+  function updateSpendTable() {
+    const selected = getSelectedSpendItems();
+    const values = getSpendInputValues();
+    const householdLabel = getSelectedHouseholdLabel();
+    const householdData = data[householdLabel] ?? data["1인 가구"];
+    spendTableBody.innerHTML = "";
+
+    if (selected.length === 0) {
+      const row = document.createElement("tr");
+      row.innerHTML = "<td>-</td><td>-</td><td>&nbsp;</td><td>&nbsp;</td>";
+      spendTableBody.append(row);
+      return;
+    }
+
+    selected.forEach((item) => {
+      const row = document.createElement("tr");
+      const myValue = values[item];
+      const avgValue = householdData?.[item];
+      const myText =
+        myValue !== null && myValue !== undefined
+          ? formatNumber(Math.round(myValue))
+          : "-";
+
+      const avgText =
+        typeof avgValue === "number"
+          ? formatNumber(Math.round(avgValue))
+          : "&nbsp;";
+      let diffText = "&nbsp;";
+      let diffClass = "";
+      if (
+        typeof avgValue === "number" &&
+        myValue !== null &&
+        myValue !== undefined
+      ) {
+        const diffValue = Math.round(myValue - avgValue);
+        const absoluteDiff = formatNumber(Math.abs(diffValue));
+        if (diffValue > 0) {
+          diffText = `+${absoluteDiff}`;
+          diffClass = "diff-positive";
+        } else {
+          diffText = `-${absoluteDiff}`;
+          diffClass = "diff-negative";
+        }
+      }
+      const diffCellClassAttribute = diffClass ? ` class="${diffClass}"` : "";
+
+      row.innerHTML = `
+        <td>${item}</td>
+        <td>${myText}</td>
+        <td>${avgText}</td>
+        <td${diffCellClassAttribute}>${diffText}</td>
+      `;
+      spendTableBody.append(row);
+    });
+  }
+
+  function updateTopSpendItem() {
+    const values = getSpendInputValues();
+    let maxItem = null;
+    let maxValue = -Infinity;
+    Object.entries(values).forEach(([item, value]) => {
+      if (value !== null && value > maxValue) {
+        maxValue = value;
+        maxItem = item;
+      }
+    });
+    topSpendItem.textContent = maxItem ?? "—";
+  }
+
+  function isSpendBlock2Ready() {
+    const selected = getSelectedSpendItems();
+    if (selected.length === 0) {
+      return false;
+    }
+    const values = getSpendInputValues();
+    return selected.every((item) => {
+      const value = values[item];
+      return typeof value === "number" && value > 0;
+    });
+  }
+
+  function isHouseholdSelected() {
+    return householdOptions.some((option) => option.checked);
+  }
+
+  function showSpendResultsWarning(message) {
+    if (spendWarningMessage) {
+      spendWarningMessage.textContent = message;
+    }
+  }
+
+  function clearSpendResultsWarning() {
+    if (spendWarningMessage) {
+      spendWarningMessage.textContent = "";
+    }
+  }
+
+  function setLatestQuarter() {
+    dataYear.textContent = "2025";
+    dataQuarter.textContent = "3";
+  }
+
+  function updateHouseholdSelection(selectedValue) {
+    householdOptions.forEach((option) => {
+      option.checked = option.value === selectedValue;
+    });
+    const selectedOption = householdOptions.find(
+      (option) => option.value === selectedValue
+    );
+    dataMembers.textContent = selectedOption
+      ? selectedOption.parentElement.textContent.trim()
+      : selectedValue;
+  }
+
   // 숫자 입력을 처리하고 메시지를 업데이트한다.
   function handleNumericInput({
     input,
@@ -366,21 +1080,15 @@ document.addEventListener("DOMContentLoaded", () => {
     messageElement.textContent = formatKoreanCurrency(numericValue);
   }
 
-  // 목표 금액 계산
-  function calculateTargetAmount() {
-    const savingType = getSavingType();
-    const interestType = getInterestType();
-    const { years, months } = getPeriodValues();
-    const annualRate = getRateValue();
-    const monthlyRate = getMonthlyRate();
-
-    let savingAmount = null;
-    if (savingType === "deposit") {
-      savingAmount = parseNumber(depositInput.value);
-    } else if (savingType === "installment") {
-      savingAmount = parseNumber(monthlyInput.value);
-    }
-
+  function calculateProjectedAmount({
+    savingType,
+    interestType,
+    savingAmount,
+    years,
+    months,
+    annualRate,
+    monthlyRate,
+  }) {
     if (!savingType || !interestType || savingAmount === null || savingAmount <= 0) {
       return null;
     }
@@ -409,18 +1117,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return applyInterestTax(gross, savingAmount);
       }
 
-      if (annualRate === 0) {
-        const gross = savingAmount * years;
-        const principal = savingAmount * (months ?? 0);
-        return applyInterestTax(gross, principal);
-      }
-
-      const factor =
-        (1 + annualRate) *
-        ((Math.pow(1 + annualRate, years) - 1) / annualRate);
-      const gross = savingAmount * factor;
-      const principal = savingAmount * (months ?? 0);
-      return applyInterestTax(gross, principal);
+      return null;
     }
 
     if (interestType === "monthlyCompound" && months !== null) {
@@ -446,8 +1143,289 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   }
 
-  // 필요한 저축액 계산
-  function calculateSavingAmount() {
+  // 목표 금액 계산
+  function calculateTargetAmount() {
+    const savingType = getSavingType();
+    const interestType = getInterestType();
+    const { years, months } = getPeriodValues();
+    const annualRate = getRateValue();
+    const monthlyRate = getMonthlyRate();
+    const savingAmount =
+      savingType === "deposit"
+        ? parseNumber(depositInput.value)
+        : parseNumber(monthlyInput.value);
+
+    return calculateProjectedAmount({
+      savingType,
+      interestType,
+      savingAmount,
+      years,
+      months,
+      annualRate,
+      monthlyRate,
+    });
+  }
+
+  function calculateAdditionalSavingAmount() {
+    const savingType = getSavingType();
+    const interestType = getInterestType();
+    const { years, months } = getPeriodValues();
+    const annualRate = getRateValue();
+    const monthlyRate = getMonthlyRate();
+    const monthlySaved = getTotalSpendSavingsPerMonth();
+
+    if (!savingType || !interestType || months === null || months <= 0) {
+      return null;
+    }
+
+    if (monthlySaved <= 0) {
+      return 0;
+    }
+
+    const savingAmount =
+      savingType === "deposit" ? monthlySaved * months : monthlySaved;
+
+    return calculateProjectedAmount({
+      savingType,
+      interestType,
+      savingAmount,
+      years,
+      months,
+      annualRate,
+      monthlyRate,
+    });
+  }
+
+  function isCalculatorInputReady() {
+    const savingType = getSavingType();
+    const interestType = getInterestType();
+    const hasPeriodUnit = periodMonthsCheckbox.checked || periodYearsCheckbox.checked;
+    const periodValue = parseNumber(savingPeriodInput.value);
+    const hasPeriod = hasPeriodUnit && periodValue !== null && periodValue > 0;
+    const hasTarget = parseNumber(targetAmountInput.value) !== null &&
+      parseNumber(targetAmountInput.value) > 0;
+    const hasDeposit = parseNumber(depositInput.value) !== null &&
+      parseNumber(depositInput.value) > 0;
+    const hasMonthly = parseNumber(monthlyInput.value) !== null &&
+      parseNumber(monthlyInput.value) > 0;
+
+    if (!savingType || !interestType) {
+      return false;
+    }
+
+    if (activeCalculator === "target") {
+      return hasPeriod && (savingType === "deposit" ? hasDeposit : hasMonthly);
+    }
+
+    if (activeCalculator === "monthly") {
+      return hasPeriod && hasTarget;
+    }
+
+    if (activeCalculator === "period") {
+      return hasTarget && (savingType === "deposit" ? hasDeposit : hasMonthly);
+    }
+
+    return false;
+  }
+
+  function calculateSavingPeriodWithAmount(savingType, savingAmount) {
+    const target = parseNumber(targetAmountInput.value);
+    const interestType = getInterestType();
+    const annualRate = getRateValue();
+    const monthlyRate = getMonthlyRate();
+
+    if (!savingType || !interestType || savingAmount === null || savingAmount <= 0) {
+      return null;
+    }
+
+    if (target === null || target <= 0) {
+      return null;
+    }
+
+    const needed = target;
+    if (needed <= 0) {
+      return 0;
+    }
+
+    if (interestType === "simple") {
+      if (savingType === "deposit") {
+        if (monthlyRate === 0) {
+          return needed === savingAmount ? 0 : null;
+        }
+        const denominator = AFTER_TAX_INTEREST_RATIO * monthlyRate;
+        if (denominator === 0) {
+          return needed === savingAmount ? 0 : null;
+        }
+        const months = (needed / savingAmount - 1) / denominator;
+        return months >= 0 ? months : null;
+      }
+
+      if (monthlyRate === 0) {
+        return needed / savingAmount;
+      }
+
+      const effectiveMonthlyRate = AFTER_TAX_INTEREST_RATIO * monthlyRate;
+      const a = (savingAmount * effectiveMonthlyRate) / 2;
+      const b = savingAmount * (1 + effectiveMonthlyRate / 2);
+      const c = -needed;
+      const discriminant = b * b - 4 * a * c;
+      if (discriminant < 0) {
+        return null;
+      }
+      const months = (-b + Math.sqrt(discriminant)) / (2 * a);
+      return months >= 0 ? months : null;
+    }
+
+    if (interestType === "annualCompound") {
+      if (savingType === "deposit") {
+        if (annualRate === 0) {
+          return needed === savingAmount ? 0 : null;
+        }
+        const requiredGrowth =
+          (needed / savingAmount - INTEREST_TAX_RATE) /
+          AFTER_TAX_INTEREST_RATIO;
+        if (requiredGrowth <= 0) {
+          return null;
+        }
+        const years =
+          Math.log(requiredGrowth) / Math.log(1 + annualRate);
+        return years >= 0 ? years * 12 : null;
+      }
+
+      return null;
+    }
+
+    if (interestType === "monthlyCompound") {
+      if (savingType === "deposit") {
+        if (monthlyRate === 0) {
+          return needed === savingAmount ? 0 : null;
+        }
+        const requiredGrowth =
+          (needed / savingAmount - INTEREST_TAX_RATE) /
+          AFTER_TAX_INTEREST_RATIO;
+        if (requiredGrowth <= 0) {
+          return null;
+        }
+        const months =
+          Math.log(requiredGrowth) / Math.log(1 + monthlyRate);
+        return months >= 0 ? months : null;
+      }
+
+      const months = solveInstallmentMonthlyCompoundMonths(
+        needed,
+        savingAmount,
+        monthlyRate
+      );
+      return months >= 0 ? months : null;
+    }
+
+    return null;
+  }
+
+  function updateSavingsInsights() {
+    if (!principalSummary || !extraSummary || !extraSummaryNote) {
+      return;
+    }
+
+    const monthlySaved = getTotalSpendSavingsPerMonth();
+    const yearlySaved = monthlySaved * 12;
+    principalSummary.textContent =
+      `한달에 ${formatNumber(Math.round(monthlySaved))}원, ` +
+      `1년에 ${formatNumber(Math.round(yearlySaved))}원을 모을 수 있어요.`;
+
+    extraSummaryNote.textContent = "";
+
+    if (!isCalculatorInputReady()) {
+      extraSummary.textContent =
+        "위의 계산기에 입력한 기간, 이자율에 맞게 추가 저축 금액을 더한 값을 알려드려요.";
+      return;
+    }
+
+    const savingType = getSavingType();
+    const extraAmount = calculateAdditionalSavingAmount();
+
+    if (extraAmount === null || Number.isNaN(extraAmount)) {
+      extraSummary.textContent =
+        "입력 값을 확인하면 추가 저축 금액을 계산할 수 있어요.";
+      return;
+    }
+
+    const roundedExtra = formatNumber(Math.round(extraAmount));
+
+    if (activeCalculator === "target") {
+      const baseTarget = calculateTargetAmount();
+      if (baseTarget === null || Number.isNaN(baseTarget)) {
+        extraSummary.textContent =
+          "입력 값을 확인하면 추가 저축 금액을 계산할 수 있어요.";
+        return;
+      }
+
+      const totalAmount = Math.round(baseTarget) + Math.round(extraAmount);
+      const percentIncrease =
+        baseTarget > 0
+          ? truncateToOneDecimal((extraAmount / baseTarget) * 100)
+          : 0;
+
+      extraSummary.textContent =
+        `저축 기간 동안 ${roundedExtra}원을 추가로 모을 수 있어요. ` +
+        `총 저축 금액은 ${formatNumber(totalAmount)}원 이에요. ` +
+        `추가로 저축하지 않을 때보다 ${formatNumber(percentIncrease)}% 증가해요!`;
+      return;
+    }
+
+    if (activeCalculator === "monthly") {
+      const targetValue = parseNumber(targetAmountInput.value);
+      if (targetValue === null || Number.isNaN(targetValue)) {
+        extraSummary.textContent =
+          "입력 값을 확인하면 추가 저축 금액을 계산할 수 있어요.";
+        return;
+      }
+
+      const totalAmount = Math.round(targetValue) + Math.round(extraAmount);
+      const percentIncrease =
+        targetValue > 0
+          ? truncateToOneDecimal((extraAmount / targetValue) * 100)
+          : 0;
+
+      extraSummary.textContent =
+        `저축 기간 동안 ${roundedExtra}원을 추가로 모을 수 있어요. ` +
+        `총 저축 금액은 ${formatNumber(totalAmount)}원 이에요. ` +
+        `추가로 저축하지 않을 때보다 ${formatNumber(percentIncrease)}% 증가해요!`;
+      return;
+    }
+
+    if (activeCalculator === "period") {
+      const currentSavingAmount =
+        savingType === "deposit"
+          ? parseNumber(depositInput.value)
+          : parseNumber(monthlyInput.value);
+      const adjustedSavingAmount =
+        savingType === "deposit"
+          ? (currentSavingAmount ?? 0) + yearlySaved
+          : (currentSavingAmount ?? 0) + monthlySaved;
+      const newPeriod = calculateSavingPeriodWithAmount(
+        savingType,
+        adjustedSavingAmount
+      );
+
+      if (newPeriod === null || Number.isNaN(newPeriod)) {
+        extraSummary.textContent =
+          "입력 값을 확인하면 추가 저축 기간을 계산할 수 있어요.";
+        return;
+      }
+
+      const roundedMonths = formatNumber(Math.round(newPeriod));
+      extraSummary.textContent =
+        `저축기간을 ${roundedMonths}개월으로 줄일 수 있어요.`;
+      if (savingType === "deposit") {
+        extraSummaryNote.textContent =
+          "예금의 경우에는 1년 추가 저축 금액을 예치금에 더해서 계산해요.";
+      }
+    }
+  }
+
+  // 필요한 월 납입액 계산
+  function calculateMonthlyAmount() {
     const savingType = getSavingType();
     const target = parseNumber(targetAmountInput.value);
     const interestType = getInterestType();
@@ -466,45 +1444,46 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (interestType === "simple" && months !== null) {
       if (savingType === "deposit") {
-        return needed / (1 + monthlyRate * months);
+        const grossFactor = 1 + monthlyRate * months;
+        const netFactor = getAfterTaxFactor(grossFactor, 1);
+        return netFactor > 0 ? needed / netFactor : null;
       }
 
       if (monthlyRate === 0) {
         return needed / months;
       }
 
-      const factor = months + (monthlyRate * months * (months + 1)) / 2;
-      return needed / factor;
+      const grossFactor = months + (monthlyRate * months * (months + 1)) / 2;
+      const netFactor = getAfterTaxFactor(grossFactor, months);
+      return netFactor > 0 ? needed / netFactor : null;
     }
 
     if (interestType === "annualCompound" && years !== null) {
       if (savingType === "deposit") {
-        return needed / Math.pow(1 + annualRate, years);
+        const grossFactor = Math.pow(1 + annualRate, years);
+        const netFactor = getAfterTaxFactor(grossFactor, 1);
+        return netFactor > 0 ? needed / netFactor : null;
       }
 
-      if (annualRate === 0) {
-        return needed / years;
-      }
-
-      const factor =
-        (1 + annualRate) *
-        ((Math.pow(1 + annualRate, years) - 1) / annualRate);
-      return needed / factor;
+      return null;
     }
 
     if (interestType === "monthlyCompound" && months !== null) {
       if (savingType === "deposit") {
-        return needed / Math.pow(1 + monthlyRate, months);
+        const grossFactor = Math.pow(1 + monthlyRate, months);
+        const netFactor = getAfterTaxFactor(grossFactor, 1);
+        return netFactor > 0 ? needed / netFactor : null;
       }
 
       if (monthlyRate === 0) {
         return needed / months;
       }
 
-      const factor =
+      const grossFactor =
         (1 + monthlyRate) *
         ((Math.pow(1 + monthlyRate, months) - 1) / monthlyRate);
-      return needed / factor;
+      const netFactor = getAfterTaxFactor(grossFactor, months);
+      return netFactor > 0 ? needed / netFactor : null;
     }
 
     return null;
@@ -540,7 +1519,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (monthlyRate === 0) {
           return needed === savingAmount ? 0 : null;
         }
-        const months = (needed / savingAmount - 1) / monthlyRate;
+        const denominator = AFTER_TAX_INTEREST_RATIO * monthlyRate;
+        if (denominator === 0) {
+          return needed === savingAmount ? 0 : null;
+        }
+        const months = (needed / savingAmount - 1) / denominator;
         return months >= 0 ? months : null;
       }
 
@@ -548,8 +1531,9 @@ document.addEventListener("DOMContentLoaded", () => {
         return needed / savingAmount;
       }
 
-      const a = (savingAmount * monthlyRate) / 2;
-      const b = savingAmount * (1 + monthlyRate / 2);
+      const effectiveMonthlyRate = AFTER_TAX_INTEREST_RATIO * monthlyRate;
+      const a = (savingAmount * effectiveMonthlyRate) / 2;
+      const b = savingAmount * (1 + effectiveMonthlyRate / 2);
       const c = -needed;
       const discriminant = b * b - 4 * a * c;
       if (discriminant < 0) {
@@ -564,22 +1548,18 @@ document.addEventListener("DOMContentLoaded", () => {
         if (annualRate === 0) {
           return needed === savingAmount ? 0 : null;
         }
+        const requiredGrowth =
+          (needed / savingAmount - INTEREST_TAX_RATE) /
+          AFTER_TAX_INTEREST_RATIO;
+        if (requiredGrowth <= 0) {
+          return null;
+        }
         const years =
-          Math.log(needed / savingAmount) / Math.log(1 + annualRate);
+          Math.log(requiredGrowth) / Math.log(1 + annualRate);
         return years >= 0 ? years * 12 : null;
       }
 
-      if (annualRate === 0) {
-        return needed / savingAmount;
-      }
-
-      const numerator =
-        1 + (needed * annualRate) / (savingAmount * (1 + annualRate));
-      if (numerator <= 0) {
-        return null;
-      }
-      const years = Math.log(numerator) / Math.log(1 + annualRate);
-      return years >= 0 ? years * 12 : null;
+      return null;
     }
 
     if (interestType === "monthlyCompound") {
@@ -587,130 +1567,234 @@ document.addEventListener("DOMContentLoaded", () => {
         if (monthlyRate === 0) {
           return needed === savingAmount ? 0 : null;
         }
+        const requiredGrowth =
+          (needed / savingAmount - INTEREST_TAX_RATE) /
+          AFTER_TAX_INTEREST_RATIO;
+        if (requiredGrowth <= 0) {
+          return null;
+        }
         const months =
-          Math.log(needed / savingAmount) / Math.log(1 + monthlyRate);
+          Math.log(requiredGrowth) / Math.log(1 + monthlyRate);
         return months >= 0 ? months : null;
       }
 
-      if (monthlyRate === 0) {
-        return needed / savingAmount;
-      }
-
-      const numerator =
-        1 + (needed * monthlyRate) / (savingAmount * (1 + monthlyRate));
-      if (numerator <= 0) {
-        return null;
-      }
-      const months = Math.log(numerator) / Math.log(1 + monthlyRate);
+      const months = solveInstallmentMonthlyCompoundMonths(
+        needed,
+        savingAmount,
+        monthlyRate
+      );
       return months >= 0 ? months : null;
     }
 
     return null;
   }
 
-  // 결과 표시 업데이트
-  function updateResults() {
-    const target = calculateTargetAmount();
-    const savingAmount = calculateSavingAmount();
-    const period = calculateSavingPeriod();
+  function formatPeriodValue(months) {
+    if (months === null || Number.isNaN(months)) {
+      return "-";
+    }
+    const useYears = periodYearsCheckbox.checked;
+    const value = useYears ? months / 12 : months;
+    const label = useYears ? "년" : "개월";
+    return `${formatNumber(value)} ${label}`;
+  }
+
+  function truncateToOneDecimal(value) {
+    return Math.floor(value * 10) / 10;
+  }
+
+  function setResultVisibility(visible) {
+    resultVisible = visible;
+    if (resultGate) {
+      resultGate.hidden = visible;
+    }
+    if (resultContent) {
+      resultContent.hidden = !visible;
+    }
+  }
+
+  function getMissingSectionTitle() {
     const savingType = getSavingType();
     const interestType = getInterestType();
-    const useYears = periodYearsCheckbox.checked;
-    const useMonths = periodMonthsCheckbox.checked;
+    const hasPeriodUnit = periodMonthsCheckbox.checked || periodYearsCheckbox.checked;
+    const periodValue = parseNumber(savingPeriodInput.value);
+    const hasPeriod = hasPeriodUnit && periodValue !== null && periodValue > 0;
+    const targetValue = parseNumber(targetAmountInput.value);
+    const hasTarget = targetValue !== null && targetValue > 0;
+    const depositValue = parseNumber(depositInput.value);
+    const monthlyValue = parseNumber(monthlyInput.value);
+    const hasDeposit = depositValue !== null && depositValue > 0;
+    const hasMonthly = monthlyValue !== null && monthlyValue > 0;
+    const interestRateValue = parseNumber(interestRateInput.value);
+    const hasRate = interestRateValue !== null && interestRateValue >= 0;
 
-    const inputTarget = parseNumber(targetAmountInput.value);
-    const targetValue =
-      inputTarget !== null && inputTarget > 0 ? inputTarget : target;
+    const savingAmountTitleText =
+      savingAmountTitle?.textContent?.trim() || "저축액";
 
-    let inputSavingAmount = null;
-    if (savingType === "deposit") {
-      inputSavingAmount = parseNumber(depositInput.value);
-    } else if (savingType === "installment") {
-      inputSavingAmount = parseNumber(monthlyInput.value);
-    }
+    const checksByTab = {
+      target: [
+        { ok: !!savingType, title: "저축 방식" },
+        {
+          ok: savingType === "deposit" ? hasDeposit : hasMonthly,
+          title: savingAmountTitleText,
+        },
+        { ok: hasPeriod, title: "저축기간" },
+        { ok: hasRate, title: "이자율" },
+        { ok: !!interestType, title: "이자 방식" },
+      ],
+      monthly: [
+        { ok: hasTarget, title: "목표금액" },
+        { ok: !!savingType, title: "저축 방식" },
+        { ok: hasPeriod, title: "저축기간" },
+        { ok: hasRate, title: "이자율" },
+        { ok: !!interestType, title: "이자 방식" },
+      ],
+      period: [
+        { ok: !!savingType, title: "저축 방식" },
+        { ok: hasTarget, title: "목표금액" },
+        {
+          ok: savingType === "deposit" ? hasDeposit : hasMonthly,
+          title: savingAmountTitleText,
+        },
+        { ok: hasRate, title: "이자율" },
+        { ok: !!interestType, title: "이자 방식" },
+      ],
+    };
 
-    const savingAmountValue =
-      inputSavingAmount !== null && inputSavingAmount > 0
-        ? inputSavingAmount
-        : savingAmount;
+    const checks = checksByTab[activeCalculator] || [];
+    const missing = checks.find((item) => !item.ok);
+    return missing ? missing.title : null;
+  }
 
-    if (targetValue === null || Number.isNaN(targetValue)) {
-      resultTargetAmount.textContent = "-";
-    } else {
-      resultTargetAmount.textContent = formatNumber(Math.round(targetValue));
-    }
-    resultSavingAmount.textContent = formatNumber(savingAmountValue);
-
-    const inputPeriod = parseNumber(savingPeriodInput.value);
-    const periodFromInput =
-      inputPeriod !== null && inputPeriod > 0 && (useYears || useMonths);
-
-    if (!periodFromInput && (period === null || Number.isNaN(period))) {
-      resultSavingPeriod.textContent = "-";
-      resultSummary.textContent = "";
-      updateComputedInputStates();
+  function updateResultGate() {
+    if (!resultGateMessage || resultVisible) {
       return;
     }
-
-    let periodValue = period;
-    let periodLabel = "개월";
-    let periodMonths = null;
-
-    if (periodFromInput) {
-      periodValue = inputPeriod;
-      periodLabel = useYears ? "년" : "개월";
-      periodMonths = useYears ? inputPeriod * 12 : inputPeriod;
-    } else if (period !== null) {
-      if (interestType === "annualCompound") {
-        periodValue = period / 12;
-        periodLabel = "년";
-      } else if (useYears) {
-        periodValue = period / 12;
-        periodLabel = "년";
-      } else {
-        periodValue = period;
-        periodLabel = "개월";
+    const missingTitle = getMissingSectionTitle();
+    if (missingTitle) {
+      resultGateMessage.textContent = `${missingTitle} 값이 비어 있어요.`;
+      if (showResultButton) {
+        showResultButton.disabled = true;
       }
-      periodMonths = period;
+    } else {
+      resultGateMessage.textContent = "";
+      if (showResultButton) {
+        showResultButton.disabled = false;
+      }
     }
+  }
 
-    resultSavingPeriod.textContent = `${formatNumber(periodValue)} ${periodLabel}`;
+  // 결과 표시 업데이트
+  function updateResults() {
+    setResultVisibility(resultVisible);
+    const interestType = getInterestType();
+    const savingType = getSavingType();
+    const monthlyAmount = parseNumber(monthlyInput.value);
+    const depositAmount = parseNumber(depositInput.value);
+    const targetValue = parseNumber(targetAmountInput.value);
+    const { months: periodMonths } = getPeriodValues();
+    updateSavingsInsights();
+    updateResultGate();
 
-    if (
-      targetValue === null ||
-      savingAmountValue === null ||
-      !savingType ||
-      !interestType ||
-      Number.isNaN(targetValue) ||
-      Number.isNaN(savingAmountValue)
-    ) {
+    if (!interestType) {
+      resultValue.textContent = "-";
       resultSummary.textContent = "";
-      updateComputedInputStates();
       return;
     }
 
-    if (periodMonths === null || Number.isNaN(periodMonths)) {
-      resultSummary.textContent = "";
-      updateComputedInputStates();
+    if (activeCalculator === "target") {
+      resultLabel.textContent = "목표 금액";
+      const target = calculateTargetAmount();
+      resultValue.textContent =
+        target === null ? "-" : formatNumber(Math.round(target));
+
+      if (
+        target === null ||
+        (savingType === "deposit" ? depositAmount === null : monthlyAmount === null) ||
+        periodMonths === null
+      ) {
+        resultSummary.textContent = "";
+        return;
+      }
+
+      const roundedSavingAmount = formatNumber(
+        Math.round(savingType === "deposit" ? depositAmount : monthlyAmount)
+      );
+      const roundedTarget = formatNumber(Math.round(target));
+      const roundedMonths = formatNumber(Math.round(periodMonths));
+      if (savingType === "deposit") {
+        resultSummary.textContent =
+          `${roundedSavingAmount}원을 약 ${roundedMonths}개월 동안 예치하면, ` +
+          `총 ${roundedTarget}원을 모을 수 있어요.`;
+      } else {
+        resultSummary.textContent =
+          `월 ${roundedSavingAmount}원씩 ${roundedMonths}개월 동안 납입하면, ` +
+          `총 ${roundedTarget}원을 모을 수 있어요.`;
+      }
       return;
     }
 
-    const roundedTarget = formatNumber(Math.round(targetValue));
-    const roundedSavingAmount = formatNumber(Math.round(savingAmountValue));
-    const roundedMonths = formatNumber(Math.round(periodMonths));
+    if (activeCalculator === "period") {
+      resultLabel.textContent = "필요 저축기간";
+      const period = calculateSavingPeriod();
+      const truncatedPeriod =
+        period === null || Number.isNaN(period) ? period : truncateToOneDecimal(period);
+      resultValue.textContent = formatPeriodValue(truncatedPeriod);
 
-    if (savingType === "deposit") {
-      resultSummary.textContent =
-        `${roundedSavingAmount}원을 약 ${roundedMonths}개월 동안 예치하면, ` +
-        `총 약 ${roundedTarget}원을 모을 수 있어요.`;
-      updateComputedInputStates();
+      if (
+        truncatedPeriod === null ||
+        (savingType === "deposit" ? depositAmount === null : monthlyAmount === null) ||
+        targetValue === null
+      ) {
+        resultSummary.textContent = "";
+        return;
+      }
+
+      const roundedSavingAmount = formatNumber(
+        Math.round(savingType === "deposit" ? depositAmount : monthlyAmount)
+      );
+      const roundedTarget = formatNumber(Math.round(targetValue));
+      const roundedMonths = formatNumber(Math.round(truncatedPeriod));
+      if (savingType === "deposit") {
+        resultSummary.textContent =
+          `${roundedSavingAmount}원을 예치하면 목표 금액 ${roundedTarget}원을 ` +
+          `모으는 데 약 ${roundedMonths}개월 걸려요.`;
+      } else {
+        resultSummary.textContent =
+          `월 ${roundedSavingAmount}원씩 납입하면 목표 금액 ${roundedTarget}원을 ` +
+          `모으는 데 약 ${roundedMonths}개월 걸려요.`;
+      }
       return;
     }
 
-    resultSummary.textContent =
-      `월 ${roundedSavingAmount}원씩 ${roundedMonths}개월 동안 모으면, ` +
-      `총 ${roundedTarget}원을 모을 수 있어요.`;
-    updateComputedInputStates();
+  if (activeCalculator === "monthly") {
+      if (savingType === "deposit") {
+        resultLabel.textContent = "필요 예치금";
+      } else {
+        resultLabel.textContent = "필요 월 납입액";
+      }
+      const monthly = calculateMonthlyAmount();
+      resultValue.textContent =
+        monthly === null ? "-" : formatNumber(Math.round(monthly));
+
+      if (monthly === null || targetValue === null || periodMonths === null) {
+        resultSummary.textContent = "";
+        return;
+      }
+
+      const roundedSavingAmount = formatNumber(Math.round(monthly));
+      const roundedTarget = formatNumber(Math.round(targetValue));
+      const roundedMonths = formatNumber(Math.round(periodMonths));
+      if (savingType === "deposit") {
+        resultSummary.textContent =
+          `목표 금액 ${roundedTarget}원을 ${roundedMonths}개월 동안 모으려면 ` +
+          `예치금은 약 ${roundedSavingAmount}원이에요.`;
+      } else {
+        resultSummary.textContent =
+          `목표 금액 ${roundedTarget}원을 ${roundedMonths}개월 동안 모으려면 ` +
+          `월 납입액은 약 ${roundedSavingAmount}원이에요.`;
+      }
+    }
   }
 
   // 예금/적금 체크박스를 서로 배타적으로 동작하게 만든다.
@@ -758,20 +1842,6 @@ document.addEventListener("DOMContentLoaded", () => {
     updateResults();
   });
 
-  rateAnnualCheckbox.addEventListener("change", () => {
-    if (rateAnnualCheckbox.checked) {
-      updateRateUnit("annual");
-    }
-    updateResults();
-  });
-
-  rateMonthlyCheckbox.addEventListener("change", () => {
-    if (rateMonthlyCheckbox.checked) {
-      updateRateUnit("monthly");
-    }
-    updateResults();
-  });
-
   interestSimpleCheckbox.addEventListener("change", () => {
     if (interestSimpleCheckbox.checked) {
       updateInterestType("simple");
@@ -796,7 +1866,13 @@ document.addEventListener("DOMContentLoaded", () => {
     updateResults();
   });
 
-  [depositInput, monthlyInput, savingPeriodInput, interestRateInput, targetAmountInput].forEach(
+  [
+    depositInput,
+    monthlyInput,
+    savingPeriodInput,
+    interestRateInput,
+    targetAmountInput,
+  ].forEach(
     (input) => {
       input.addEventListener("input", () => {
         if (input === depositInput) {
@@ -846,7 +1922,174 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   );
 
-  updateSavingAmountInputs();
+  allTabButtons.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      setActiveCalculator(tab.dataset.calcTab);
+      updateResults();
+    });
+  });
+
+  if (showResultButton) {
+    showResultButton.addEventListener("click", () => {
+      setResultVisibility(true);
+      updateResults();
+    });
+  }
+
+  function resetAllInputs() {
+    clearInputState(depositInput, depositAmountMessage, depositAmountError);
+    clearInputState(monthlyInput, monthlyAmountMessage, monthlyAmountError);
+    clearInputState(savingPeriodInput, savingPeriodMessage, savingPeriodError);
+    clearInputState(interestRateInput, interestRateMessage, interestRateError);
+    clearInputState(targetAmountInput, targetAmountMessage, targetAmountError);
+
+    depositCheckbox.checked = false;
+    installmentCheckbox.checked = false;
+    periodMonthsCheckbox.checked = false;
+    periodYearsCheckbox.checked = false;
+    interestSimpleCheckbox.checked = false;
+    interestAnnualCompoundCheckbox.checked = false;
+    interestMonthlyCompoundCheckbox.checked = false;
+
+    spendItems.forEach((item) => {
+      item.checked = false;
+    });
+    householdOptions.forEach((option) => {
+      option.checked = false;
+    });
+
+    renderSpendInputs();
+    renderSpendSavingsInputs();
+    updateSpendTable();
+    updateTopSpendItem();
+    updateHouseholdSelection("1");
+    clearSpendResultsWarning();
+    if (spendResultsContainer) {
+      spendResultsContainer.hidden = true;
+    }
+
+    updateInterestTypeAvailability();
+    updatePeriodUnitAvailability();
+    updateSavingAmountInputs();
+    setResultVisibility(false);
+    updateResults();
+  }
+
+  if (resetInputsButton) {
+    resetInputsButton.addEventListener("click", resetAllInputs);
+  }
+
+  if (floatingTabs && calcSections.tabs) {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          floatingTabs.classList.remove("is-visible");
+        } else {
+          floatingTabs.classList.add("is-visible");
+        }
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(calcSections.tabs);
+  }
+
+  updatePeriodUnit("months");
+  updateInterestType("simple");
+  updateInterestTypeAvailability();
   updatePeriodUnitAvailability();
+  setActiveCalculator(activeCalculator);
+  updateSavingAmountInputs();
+  setResultVisibility(false);
   updateResults();
+
+  function rotateHeaderMessage() {
+    if (!stickyHeaderText) {
+      return;
+    }
+    headerMessageIndex = (headerMessageIndex + 1) % headerMessages.length;
+    stickyHeaderText.textContent = headerMessages[headerMessageIndex];
+  }
+
+  if (stickyHeaderText) {
+    stickyHeaderText.textContent = headerMessages[headerMessageIndex];
+    setInterval(rotateHeaderMessage, 20000);
+  }
+
+  if (stickyHeader) {
+    const moveToSpendBlock = () => {
+      if (!spendBlock) {
+        return;
+      }
+      spendBlock.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+
+    stickyHeader.addEventListener("click", moveToSpendBlock);
+    stickyHeader.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        moveToSpendBlock();
+      }
+    });
+  }
+
+  setLatestQuarter();
+  updateHouseholdSelection("1");
+  renderSpendInputs();
+  renderSpendSavingsInputs();
+  updateSpendTable();
+  updateTopSpendItem();
+
+  spendItems.forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      renderSpendInputs();
+      renderSpendSavingsInputs();
+      updateSpendTable();
+      updateTopSpendItem();
+      clearSpendResultsWarning();
+      if (spendResultsContainer && !spendResultsContainer.hidden) {
+        updateSavingsInsights();
+      }
+    });
+  });
+
+  householdOptions.forEach((option) => {
+    option.addEventListener("change", () => {
+      if (option.checked) {
+        updateHouseholdSelection(option.value);
+        renderSpendSavingsInputs();
+        updateSpendTable();
+        clearSpendResultsWarning();
+      }
+    });
+  });
+
+  if (spendResultsButton) {
+    spendResultsButton.addEventListener("click", () => {
+      if (getSelectedSpendItems().length === 0) {
+        showSpendResultsWarning("소비항목을 선택해주세요.");
+        return;
+      }
+
+      if (!isSpendBlock2Ready()) {
+        showSpendResultsWarning("평균 소비 금액을 입력해주세요.");
+        return;
+      }
+
+      if (!isHouseholdSelected()) {
+        showSpendResultsWarning("가구원 수를 선택해주세요.");
+        return;
+      }
+
+      clearSpendResultsWarning();
+      if (spendResultsContainer) {
+        spendResultsContainer.hidden = false;
+        spendResultsContainer.removeAttribute("hidden");
+        spendResultsContainer.style.display = "block";
+        spendResultsContainer.style.visibility = "visible";
+      }
+      updateSpendTable();
+      updateTopSpendItem();
+      updateSavingsInsights();
+    });
+  }
 });
