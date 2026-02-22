@@ -2101,3 +2101,19 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 });
+
+// =====================
+// Supabase 저장 이벤트 연결
+// =====================
+
+if (showResultButton) {
+  showResultButton.addEventListner("click", async () => {
+    console.log("저장 트리거 클릭됨");
+
+//1. payload 생성 (미구현)
+    const payload = buildPayoad();
+
+    console.log("payload:", payload);
+
+//2. Supabase 저장 (미구현)
+  
