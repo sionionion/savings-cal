@@ -1,7 +1,7 @@
 // Supabase 프로젝트 정보 및 클라이언트 생성
 const SUPABASE_URL = "https://shlnlfqiyrnpepxjjmuh.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_LOjVFn8HlLqIkbqVqUqmlg_PJXHG8Dk";
-const supabaseClient = supbase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // * 로드 확인용
 console.log("Supabase client initialized:", !!supabaseClient);
