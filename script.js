@@ -315,6 +315,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const hasSavingAmountSection = calcSections.savingAmount
       ? !calcSections.savingAmount.hidden
       : false;
+    // 저축액 섹션이 숨겨진 탭에서도 이자 방식 제한은 항상 적용한다.
+    updateInterestTypeAvailability();
 
     if (!hasSavingAmountSection) {
       return;
@@ -330,7 +332,6 @@ document.addEventListener("DOMContentLoaded", () => {
       depositInput.disabled = false;
       monthlyInput.disabled = true;
       clearInputState(monthlyInput, monthlyAmountMessage, monthlyAmountError);
-      updateInterestTypeAvailability();
       return;
     }
 
@@ -344,7 +345,6 @@ document.addEventListener("DOMContentLoaded", () => {
       depositInput.disabled = true;
       monthlyInput.disabled = false;
       clearInputState(depositInput, depositAmountMessage, depositAmountError);
-      updateInterestTypeAvailability();
       return;
     }
 
@@ -356,7 +356,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     depositInput.disabled = true;
     monthlyInput.disabled = true;
-    updateInterestTypeAvailability();
   }
 
   function setActiveCalculator(mode) {
@@ -417,6 +416,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 이자 방식을 하나만 선택하도록 만든다.
   function updateInterestType(type) {
+    if (type === "annualCompound" && installmentCheckbox.checked) {
+      type = "simple";
+    }
+
     if (type === "simple") {
       interestSimpleCheckbox.checked = true;
       interestAnnualCompoundCheckbox.checked = false;
@@ -1254,6 +1257,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (needed <= 0) {
       return 0;
     }
+    if (savingType === "deposit" && savingAmount >= needed) {
+      return 0;
+    }
 
     if (interestType === "simple") {
       if (savingType === "deposit") {
@@ -1339,7 +1345,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const yearlySaved = monthlySaved * 12;
     principalSummary.textContent =
       `한달에 ${formatNumber(Math.round(monthlySaved))}원, ` +
-      `1년에 ${formatNumber(Math.round(yearlySaved))}원을 모을 수 있어요.`;
+      `1년에 ${formatNumber(Math.round(yearlySaved))}원이에요.`;
 
     extraSummaryNote.textContent = "";
 
@@ -1350,6 +1356,41 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const savingType = getSavingType();
+
+    if (activeCalculator === "period") {
+      const currentSavingAmount =
+        savingType === "deposit"
+          ? parseNumber(depositInput.value)
+          : parseNumber(monthlyInput.value);
+      const adjustedSavingAmount =
+        savingType === "deposit"
+          ? (currentSavingAmount ?? 0) + yearlySaved
+          : (currentSavingAmount ?? 0) + monthlySaved;
+      const newPeriod = calculateSavingPeriodWithAmount(
+        savingType,
+        adjustedSavingAmount
+      );
+
+      if (newPeriod === null || Number.isNaN(newPeriod)) {
+        extraSummary.textContent =
+          "입력 값을 확인하면 추가 저축 기간을 계산할 수 있어요.";
+        return;
+      }
+
+      const roundedMonths = formatNumber(Math.round(newPeriod));
+      extraSummary.textContent =
+        `저축기간을 ${roundedMonths}개월으로 줄일 수 있어요.`;
+      extraSummaryNote.textContent =
+        "위의 예적금 계산기에 입력한 저축 방식, 이율, 기간을 적용한 금액이에요.";
+      if (savingType === "deposit") {
+        const roundedSavingAmount = formatNumber(Math.round(yearlySaved));
+        extraSummaryNote.textContent =
+          `위의 예적금 계산기에 입력한 저축 방식, 이율, 기간을 적용한 금액이에요. ` +
+          `예금의 경우에는 1년 동안 모을 수 있는 추가 저축 금액 ${roundedSavingAmount}원을 예치금에 더해서 계산해요.`;
+      }
+      return;
+    }
+
     const extraAmount = calculateAdditionalSavingAmount();
 
     if (extraAmount === null || Number.isNaN(extraAmount)) {
@@ -1375,9 +1416,11 @@ document.addEventListener("DOMContentLoaded", () => {
           : 0;
 
       extraSummary.textContent =
-        `저축 기간 동안 ${roundedExtra}원을 추가로 모을 수 있어요. ` +
-        `총 저축 금액은 ${formatNumber(totalAmount)}원 이에요. ` +
-        `추가로 저축하지 않을 때보다 ${formatNumber(percentIncrease)}% 증가해요!`;
+        `• 저축 기간 동안 ${roundedExtra}원을 추가로 모을 수 있어요.\n` +
+        `• 총 저축 금액은 ${formatNumber(totalAmount)}원이에요.\n` +
+        `• 추가로 저축하지 않을 때보다 ${formatNumber(percentIncrease)}% 증가해요!`;
+      extraSummaryNote.textContent =
+        "위의 예적금 계산기에 입력한 저축 방식, 이율, 기간을 적용한 금액이에요.";
       return;
     }
 
@@ -1396,39 +1439,16 @@ document.addEventListener("DOMContentLoaded", () => {
           : 0;
 
       extraSummary.textContent =
-        `저축 기간 동안 ${roundedExtra}원을 추가로 모을 수 있어요. ` +
-        `총 저축 금액은 ${formatNumber(totalAmount)}원 이에요. ` +
-        `추가로 저축하지 않을 때보다 ${formatNumber(percentIncrease)}% 증가해요!`;
+        `• 저축 기간 동안 ${roundedExtra}원을 추가로 모을 수 있어요.\n` +
+        `• 총 저축 금액은 ${formatNumber(totalAmount)}원이에요.\n` +
+        `• 추가로 저축하지 않을 때보다 ${formatNumber(percentIncrease)}% 증가해요!`;
+      extraSummaryNote.textContent =
+        "위의 예적금 계산기에 입력한 저축 방식, 이율, 기간을 적용한 금액이에요.";
       return;
     }
 
     if (activeCalculator === "period") {
-      const currentSavingAmount =
-        savingType === "deposit"
-          ? parseNumber(depositInput.value)
-          : parseNumber(monthlyInput.value);
-      const adjustedSavingAmount =
-        savingType === "deposit"
-          ? (currentSavingAmount ?? 0) + yearlySaved
-          : (currentSavingAmount ?? 0) + monthlySaved;
-      const newPeriod = calculateSavingPeriodWithAmount(
-        savingType,
-        adjustedSavingAmount
-      );
-
-      if (newPeriod === null || Number.isNaN(newPeriod)) {
-        extraSummary.textContent =
-          "입력 값을 확인하면 추가 저축 기간을 계산할 수 있어요.";
-        return;
-      }
-
-      const roundedMonths = formatNumber(Math.round(newPeriod));
-      extraSummary.textContent =
-        `저축기간을 ${roundedMonths}개월으로 줄일 수 있어요.`;
-      if (savingType === "deposit") {
-        extraSummaryNote.textContent =
-          "예금의 경우에는 1년 추가 저축 금액을 예치금에 더해서 계산해요.";
-      }
+      return;
     }
   }
 
@@ -1611,6 +1631,48 @@ document.addEventListener("DOMContentLoaded", () => {
     return Math.floor(value * 10) / 10;
   }
 
+  function enforcePeriodSavingAmountLimit() {
+    const LIMIT_ERROR_MESSAGE = "목표 금액보다 크게 입력할 수 없어요.";
+    const clearLimitError = (errorElement) => {
+      if (errorElement.textContent === LIMIT_ERROR_MESSAGE) {
+        errorElement.textContent = "";
+      }
+    };
+
+    if (activeCalculator !== "period") {
+      clearLimitError(depositAmountError);
+      clearLimitError(monthlyAmountError);
+      return;
+    }
+
+    const targetValue = parseNumber(targetAmountInput.value);
+    if (targetValue === null || targetValue <= 0) {
+      clearLimitError(depositAmountError);
+      clearLimitError(monthlyAmountError);
+      return;
+    }
+
+    const capInputValue = (input, messageElement, errorElement) => {
+      const numericValue = parseNumber(input.value);
+      if (numericValue === null) {
+        clearLimitError(errorElement);
+        return;
+      }
+
+      if (numericValue > targetValue) {
+        input.value = formatWithComma(String(targetValue), false);
+        messageElement.textContent = formatKoreanCurrency(targetValue);
+        errorElement.textContent = LIMIT_ERROR_MESSAGE;
+        return;
+      }
+
+      clearLimitError(errorElement);
+    };
+
+    capInputValue(depositInput, depositAmountMessage, depositAmountError);
+    capInputValue(monthlyInput, monthlyAmountMessage, monthlyAmountError);
+  }
+
   function setResultVisibility(visible) {
     resultVisible = visible;
     if (resultGate) {
@@ -1695,6 +1757,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // 결과 표시 업데이트
   function updateResults() {
     setResultVisibility(resultVisible);
+    enforcePeriodSavingAmountLimit();
     const interestType = getInterestType();
     const savingType = getSavingType();
     const monthlyAmount = parseNumber(monthlyInput.value);
@@ -1952,33 +2015,29 @@ const SAVINGS_TABLE_NAME = "calc_submissions"; // 테이블명 = calc_submission
  * [설정] DB 컬럼명 매핑
  * - payload의 key(좌측)가 DB 컬럼명(우측)과 반드시 1:1로 맞아야 함.
  * - 아직 컬럼 설계가 확정되지 않았다면 ""로 비워두고,
- * - Supabase에 컬럼 생성 후 채워 넣기.
+ *   아래 "어떤 컬럼이 필요" 섹션 참고해서 Supabase에 컬럼 생성 후 채워 넣기.
  */
 const DB_COLUMNS = {
-  // =====저축계산기=====
-  // calculator_mode: "계산기 모드 선택",
-  // saving_type: "저축 방법 (예/적금)",
-  // interest_type: "이자 방식",
-  // period_unit: "저축기간 단위(연/월)",
-  // period_value_raw: "저축기간 입력값",
-  // period_months: "저축기간 개월 환산값", //*기간단위가 '년'이면 rawPeriod*12, '개월'이면 그대로 rawPeriod
-  // annual_rate_ratio: "연이자율 비율 환산값",
-  // annual_rate: "연이자율",
-  // deposit_amount: "예금_예치금 입력값",
-  // monthly_amount: "적금_월 납입액 입력값",
-  // target_amount: "목표금액",
-  // result_label: "결과 항목 표시", //* 계산결과가 뭔지? 목표금액? 필요 저축기간? 필요 예치금? 필요 월 납입액?
-  // result_value_text: "표시된 계산결과의 값",
-  // =====절약계산기=====
-  // household_label: "가구원 수",
-  // spend_selected: "소비항목", //* Supabase에서 컬럼타입 "jsonb"로 잡아야 에러 안 난다고 함.
-  // spend_inputs: "항목별 월간 소비액", //* 컬럼타입 "jsonb"
-  // spend_savings: "절약 희망 금액", //* 컬럼타입 "jsonb"
-  // =====중복저장 방지용=====
-  // client_id: "사용자 접속 아이디" //* 현재 테이블에 존재하는 "id" 와는 별개의 컬럼으로 구분해야 됨
-  // payload_hash: "사용자가 입력한 값을 payload 함수로 문자열화해서 단순화한 값" //* 그냥 그대로 카멜케이스로 적어줘도 될 듯?
-  // =====콜론 오른쪽에 맵핑한 컬럼명 집어넣고====
-  // =====주석표시(//)랑 별표(*) 지우면 됨=====
+  client_id: "client_id",
+  payload_hash: "payload_hash",
+  created_at: "created_at",
+  calculator_mode: "calculator_mode",
+  saving_type: "saving_type",
+  interest_type: "interest_type",
+  period_unit: "period_unit",
+  period_value_raw: "period_value_raw",
+  period_months: "period_months",
+  annual_rate_ratio: "annual_rate_ratio",
+  annual_rate: "annual_rate",
+  deposit_amount: "deposit_amount",
+  monthly_amount: "monthly_amount",
+  target_amount: "target_amount",
+  result_label: "result_label",
+  result_value_text: "result_value_text",
+  household_label: "household_label",
+  spend_selected: "spend_selected",
+  spend_inputs: "spend_inputs",
+  spend_savings: "spend_savings",
 };
 
 /**
