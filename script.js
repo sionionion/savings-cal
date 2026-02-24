@@ -1938,7 +1938,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
 // ============================================================
-// [3단계] payload 생성 + [4단계] Supabase insert(중복 방지 포함)
+// *** supabase 맵핑 + payload 생성 + 중복저장 방지 처리 ***
 // ============================================================
 
 /**
@@ -2192,18 +2192,10 @@ async function insertSnapshotToSupabase() {
   throw error;
 }
 
-/**
- * [UI] 저장 상태 메시지 업데이트(HTML 변경 없이 기존 요소 재사용)
- * - 현재 너의 화면 요소 중 "resultGateMessage"가 메시지 출력에 쓰이고 있으므로
- *   저장 관련 메시지도 여기를 재활용한다.
- */
-function setSaveMessage(text) {
-  if (!resultGateMessage) return;
-  resultGateMessage.textContent = text;
-}
-
+//*setSaveMessage(text) 함수 삭제함
+  
 // =================================================
-// [ payload 생성 끝 ]
+// *** payload, 맵핑, 중복저장방지 생성 끝 ***
 // =================================================
   
   if (showResultButton) {
@@ -2382,21 +2374,33 @@ function setSaveMessage(text) {
       spendResultsButton.disabled = true;
 
       try {
-        setSaveMessage("저장 중...");
         const res = await insertSnapshotToSupabase();
-
+      
         if (res?.status === "inserted") {
-          setSaveMessage("저장 완료!");
+          if (location.hostname === "localhost") {
+            console.log("[DB] 저장 완료!");
+          }
+      
         } else if (res?.status === "duplicate_ignored") {
-          setSaveMessage("이미 같은 값이 저장되어 있어요. (중복 저장 방지)");
+          if (location.hostname === "localhost") {
+            console.log("[DB] 중복 저장 방지됨");
+          }
+      
         } else {
-          setSaveMessage("저장 상태를 확인해주세요.");
+          if (location.hostname === "localhost") {
+            console.log("[DB] 알 수 없는 상태");
+          }
         }
+      
       } catch (e) {
-        console.error(e);
-        setSaveMessage("저장 실패: 콘솔 에러를 확인해주세요.");
+        if (location.hostname === "localhost") {
+          console.error(e);
+          console.log("[DB] 저장 실패:");
+        }
+      
       } finally {
         spendResultsButton.disabled = prevDisabled;
+      }
     });
   }
 });
