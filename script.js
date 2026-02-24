@@ -1937,10 +1937,286 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+// ============================================================
+// [3단계] payload 생성 + [4단계] Supabase insert(중복 방지 포함)
+// ============================================================
+
+/**
+ * [설정] Supabase에 실제로 insert할 "테이블명"을 여기에 입력해야 함.
+ * - 어디서 정하나? Supabase Dashboard > Table Editor에서 만든 테이블 이름.
+ * - 아직 미정이면 ""로 두고, 확정되면 문자열로 채우기.
+ */
+const SAVINGS_TABLE_NAME = "calc_submissions"; // 테이블명 = calc_submissions
+
+/**
+ * [설정] DB 컬럼명 매핑
+ * - payload의 key(좌측)가 DB 컬럼명(우측)과 반드시 1:1로 맞아야 함.
+ * - 아직 컬럼 설계가 확정되지 않았다면 ""로 비워두고,
+ *   아래 "어떤 컬럼이 필요" 섹션 참고해서 Supabase에 컬럼 생성 후 채워 넣기.
+ */
+const DB_COLUMNS = {
+  // =====저축계산기=====
+  // calculator_mode: "계산기 모드 선택",
+  // saving_type: "저축 방법 (예/적금)",
+  // interest_type: "이자 방식",
+  // period_unit: "저축기간 단위(연/월)",
+  // period_value_raw: "저축기간 입력값",
+  // period_months: "저축기간 개월 환산값", //*기간단위가 '년'이면 rawPeriod*12, '개월'이면 그대로 rawPeriod
+  // annual_rate_ratio: "연이자율 비율 환산값",
+  // annual_rate: "연이자율",
+  // deposit_amount: "예금_예치금 입력값",
+  // monthly_amount: "적금_월 납입액 입력값",
+  // target_amount: "목표금액",
+  // result_label: "결과 항목 표시", //* 계산결과가 뭔지? 목표금액? 필요 저축기간? 필요 예치금? 필요 월 납입액?
+  // result_value_text: "표시된 계산결과의 값",
+  // =====절약계산기=====
+  // household_label: "가구원 수",
+  // spend_selected: "소비항목", //* Supabase에서 컬럼타입 "jsonb"로 잡아야 에러 안 난다고 함.
+  // spend_inputs: "항목별 월간 소비액", //* 컬럼타입 "jsonb"
+  // spend_savings: "절약 희망 금액", //* 컬럼타입 "jsonb"
+  // =====중복저장 방지용=====
+  // client_id: "사용자 접속 아이디" //* 현재 테이블에 존재하는 "id" 와는 별개의 컬럼으로 구분해야 됨
+  // payload_hash: "사용자가 입력한 값을 payload 함수로 문자열화해서 단순화한 값" //* 그냥 그대로 카멜케이스로 적어줘도 될 듯?
+  // =====콜론 오른쪽에 맵핑한 컬럼명 집어넣고====
+  // =====주석표시(//)랑 별표(*) 지우면 됨=====
+};
+
+/**
+ * [기능] 동일 접속 환경(브라우저) 식별자 생성/유지
+ * - localStorage에 한 번 생성해두고 계속 재사용
+ * - 목적: "같은 접속 환경에서 동일 값 중복 저장 방지"의 기준값 중 하나
+ */
+function getOrCreateClientId() {
+  const STORAGE_KEY = "sc_client_id";
+
+  const existing = localStorage.getItem(STORAGE_KEY);
+  if (existing && typeof existing === "string") return existing;
+
+  // uuid 생성(브라우저 지원)
+  const newId =
+    typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : String(Date.now()) + "-" + String(Math.random()).slice(2);
+
+  localStorage.setItem(STORAGE_KEY, newId);
+  return newId;
+}
+
+/**
+ * [기능] 객체를 "해시 입력용"으로 안정적으로 문자열화 (키 순서 고정)
+ * - JSON.stringify는 기본적으로 객체 key 순서를 100% 보장하지 않으므로
+ *   key 정렬 후 stringify해서 동일 입력 => 동일 문자열 보장
+ */
+function stableStringify(obj) {
+  if (obj === null || typeof obj !== "object") return JSON.stringify(obj);
+
+  if (Array.isArray(obj)) {
+    return "[" + obj.map(stableStringify).join(",") + "]";
+  }
+
+  const keys = Object.keys(obj).sort();
+  return (
+    "{" +
+    keys
+      .map((k) => JSON.stringify(k) + ":" + stableStringify(obj[k]))
+      .join(",") +
+    "}"
+  );
+}
+
+/**
+ * [기능] SHA-256 해시 생성 (payload 중복 판정에 사용)
+ * - 반환: hex 문자열
+ */
+async function sha256Hex(text) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text);
+
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * [3단계 핵심] "DB에 저장할 payload"를 만든다.
+ *
+ * 설계 포인트:
+ * - 화면에 표시된 결과값(resultValue.textContent) + 계산의 입력들(각 input 값) + 소비 입력들까지
+ * - "개인 식별 가능 정보"는 넣지 않기 (너의 정책 유지)
+ * - 저장 단위는 "사용자가 결과 확인 버튼을 눌렀을 때의 스냅샷" 1회
+ */
+function buildPayloadSnapshot() {
+  const savingType = getSavingType(); // "deposit" | "installment" | null
+  const interestType = getInterestType(); // "simple" | "annualCompound" | "monthlyCompound" | null
+  const period = getPeriodValues(); // { years, months }
+
+  const periodUnit = periodYearsCheckbox.checked
+    ? "years"
+    : periodMonthsCheckbox.checked
+      ? "months"
+      : null;
+
+  // 입력 숫자 값들
+  const depositAmount = parseNumber(depositInput.value);
+  const monthlyAmount = parseNumber(monthlyInput.value);
+  const savingPeriodRaw = parseNumber(savingPeriodInput.value);
+  const targetAmount = parseNumber(targetAmountInput.value);
+
+  // 이자율: 네 코드에서는 getRateValue()가 "ratio(예: 0.045)"를 반환
+  const annualRateRatio = getRateValue();
+  const annualRatePercent = annualRateRatio * 100;
+
+  // 소비 파트 입력들
+  const householdLabel = getSelectedHouseholdLabel();
+  const spendSelected = getSelectedSpendItems();
+  const spendInputsObj = getSpendInputValues();
+  const spendSavingsObj = getSpendSavingsValues();
+
+  // 화면 결과(표시용) - 이미 updateResults()가 반영해둔 값
+  const resultLabelText = resultLabel?.textContent ?? null;
+  const resultValueText = resultValue?.textContent ?? null;
+
+  return {
+    calculator_mode: activeCalculator ?? null,
+    saving_type: savingType,
+    interest_type: interestType,
+
+    period_unit: periodUnit,
+    period_value_raw: savingPeriodRaw,
+    period_months: period.months,
+
+    annual_rate_ratio: annualRateRatio,
+    annual_rate: annualRatePercent,
+
+    deposit_amount: depositAmount,
+    monthly_amount: monthlyAmount,
+    target_amount: targetAmount,
+
+    result_label: resultLabelText,
+    result_value_text: resultValueText,
+
+    household_label: householdLabel,
+    spend_selected: spendSelected,
+    spend_inputs: spendInputsObj,
+    spend_savings: spendSavingsObj,
+  };
+}
+
+/**
+ * [기능] payload를 DB row 형태로 변환한다.
+ * - DB 컬럼명이 아직 확정되지 않았으니, DB_COLUMNS를 채워 넣기 전까지는 동작 불가.
+ * - 확정 후에는 아래 mapping이 곧 "insert row"가 됨.
+ */
+function mapPayloadToDbRow({ clientId, payloadHash, payload }) {
+  // DB 컬럼명이 하나라도 비어 있으면, 지금은 저장 불가(명확히 실패 처리)
+  const requiredKeys = ["client_id", "payload_hash"];
+
+  for (const k of requiredKeys) {
+    if (!DB_COLUMNS[k] || DB_COLUMNS[k].trim() === "") {
+      throw new Error(
+        `DB_COLUMNS.${k} 가 비어 있습니다. (Supabase 컬럼명 확정 필요)`
+      );
+    }
+  }
+
+  if (!SAVINGS_TABLE_NAME || SAVINGS_TABLE_NAME.trim() === "") {
+    throw new Error(
+      "SAVINGS_TABLE_NAME 이 비어 있습니다. (Supabase 테이블명 확정 필요)"
+    );
+  }
+
+  // row 생성
+  const row = {};
+
+  // 필수
+  row[DB_COLUMNS.client_id] = clientId;
+  row[DB_COLUMNS.payload_hash] = payloadHash;
+
+  // 선택(있으면 넣기)
+  if (DB_COLUMNS.created_at && DB_COLUMNS.created_at.trim() !== "") {
+    // created_at을 서버 기본값(now())로 쓸 거면 이 줄은 빼도 됨
+    row[DB_COLUMNS.created_at] = new Date().toISOString();
+  }
+
+  // payload의 각 필드 매핑(컬럼명이 비어있으면 스킵)
+  Object.entries(payload).forEach(([payloadKey, payloadValue]) => {
+    const col = DB_COLUMNS[payloadKey];
+    if (!col || col.trim() === "") return;
+
+    // JSON 저장이 필요하면: Supabase 컬럼 타입을 jsonb로 만들면 그대로 객체/배열 넣어도 됨
+    row[col] = payloadValue;
+  });
+
+  return row;
+}
+
+/**
+ * [4단계 핵심] Supabase에 insert한다.
+ * - "동일 접속 환경(client_id) + 동일 입력(payload_hash)"이면 중복 저장이 되지 않게 만든다.
+ * - 이 중복 방지는 "DB의 unique 제약조건"이 있어야 완성된다. (아래 B 섹션 SQL 참고)
+ */
+async function insertSnapshotToSupabase() {
+  const clientId = getOrCreateClientId();
+  const payload = buildPayloadSnapshot();
+
+  // 중복 판정용 hash는 "clientId 제외한 payload 내용"을 기준으로 만들 것
+  // (같은 브라우저에서 같은 값 중복 저장 방지 목적)
+  const hashInput = stableStringify(payload);
+  const payloadHash = await sha256Hex(hashInput);
+
+  const row = mapPayloadToDbRow({ clientId, payloadHash, payload });
+
+  /**
+   * insert 전략:
+   * - DB에 (client_id, payload_hash) unique 제약이 걸려 있으면,
+   *   같은 값 insert 시 "중복 에러"가 발생한다.
+   * - 그 에러를 "정상(중복 방지 성공)"으로 간주해도 되고,
+   *   또는 upsert + ignore 형태로 처리할 수도 있다.
+   *
+   * 아래는 "중복이면 에러가 나도 사용자 경험상 실패로 보지 않는" 방식.
+   */
+  const { error } = await supabaseClient.from(SAVINGS_TABLE_NAME).insert(row);
+
+  if (!error) {
+    return { status: "inserted" };
+  }
+
+  // 중복(Unique violation)인 경우를 "중복 저장 방지 성공"으로 처리
+  // Postgres unique violation SQLSTATE: 23505
+  if (error.code === "23505") {
+    return { status: "duplicate_ignored" };
+  }
+
+  // 그 외는 진짜 오류
+  throw error;
+}
+
+/**
+ * [UI] 저장 상태 메시지 업데이트(HTML 변경 없이 기존 요소 재사용)
+ * - 현재 너의 화면 요소 중 "resultGateMessage"가 메시지 출력에 쓰이고 있으므로
+ *   저장 관련 메시지도 여기를 재활용한다.
+ */
+function setSaveMessage(text) {
+  if (!resultGateMessage) return;
+  resultGateMessage.textContent = text;
+}
+
+// =================================================
+// [ payload 생성 끝 ]
+// =================================================
+  
   if (showResultButton) {
-    showResultButton.addEventListener("click", () => {
+    showResultButton.addEventListener("click", async () => {
       setResultVisibility(true);
       updateResults();
+      
+      try {
+        const res = await insertSnapshotToSupabase();
+        console.log("save result:", res.status);
+      } catch (e) {
+        console.error("save failed:", e);
+      }
     });
   }
 
@@ -2098,6 +2374,29 @@ document.addEventListener("DOMContentLoaded", () => {
       updateSpendTable();
       updateTopSpendItem();
       updateSavingsInsights();
+
+      setResultVisibility(true);
+      updateResults();
+
+      const prevDisabled = spendResultsButton.disabled;
+      spendResultsButton.disabled = true;
+
+      try {
+        setSaveMessage("저장 중...");
+        const res = await insertSnapshotToSupabase();
+
+        if (res?.status === "inserted") {
+          setSaveMessage("저장 완료!");
+        } else if (res?.status === "duplicate_ignored") {
+          setSaveMessage("이미 같은 값이 저장되어 있어요. (중복 저장 방지)");
+        } else {
+          setSaveMessage("저장 상태를 확인해주세요.");
+        }
+      } catch (e) {
+        console.error(e);
+        setSaveMessage("저장 실패: 콘솔 에러를 확인해주세요.");
+      } finally {
+        spendResultsButton.disabled = prevDisabled;
     });
   }
 });
