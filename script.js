@@ -1952,7 +1952,7 @@ const SAVINGS_TABLE_NAME = "calc_submissions"; // 테이블명 = calc_submission
  * [설정] DB 컬럼명 매핑
  * - payload의 key(좌측)가 DB 컬럼명(우측)과 반드시 1:1로 맞아야 함.
  * - 아직 컬럼 설계가 확정되지 않았다면 ""로 비워두고,
- *   아래 "어떤 컬럼이 필요" 섹션 참고해서 Supabase에 컬럼 생성 후 채워 넣기.
+ * - Supabase에 컬럼 생성 후 채워 넣기.
  */
 const DB_COLUMNS = {
   // =====저축계산기=====
