@@ -2348,7 +2348,7 @@ function setSaveMessage(text) {
   });
 
   if (spendResultsButton) {
-    spendResultsButton.addEventListener("click", () => {
+    spendResultsButton.addEventListener("click", async() => {
       if (getSelectedSpendItems().length === 0) {
         showSpendResultsWarning("소비항목을 선택해주세요.");
         return;
