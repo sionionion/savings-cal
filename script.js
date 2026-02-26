@@ -1379,7 +1379,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const roundedMonths = formatNumber(Math.round(newPeriod));
       extraSummary.textContent =
-        `저축기간을 ${roundedMonths}개월으로 줄일 수 있어요.`;
+        `저축기간을 ${roundedMonths}개월로 줄일 수 있어요.`;
       extraSummaryNote.textContent =
         "위의 예적금 계산기에 입력한 저축 방식, 이율, 기간을 적용한 금액이에요.";
       if (savingType === "deposit") {
