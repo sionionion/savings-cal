@@ -1377,9 +1377,10 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      const roundedMonths = formatNumber(Math.round(newPeriod));
+      const roundedMonths = Math.round(newPeriod);
+      const periodText = formatYearsMonths(roundedMonths);
       extraSummary.textContent =
-        `저축기간을 ${roundedMonths}개월로 줄일 수 있어요.`;
+        `저축기간을 ${periodText}으로 줄일 수 있어요.`;
       extraSummaryNote.textContent =
         "위의 예적금 계산기에 입력한 저축 방식, 이율, 기간을 적용한 금액이에요.";
       if (savingType === "deposit") {
@@ -1617,14 +1618,33 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   }
 
-  function formatPeriodValue(months) {
-    if (months === null || Number.isNaN(months)) {
+  function formatYearsMonths(totalMonths) {
+    if (totalMonths === null || Number.isNaN(totalMonths)) {
       return "-";
     }
-    const useYears = periodYearsCheckbox.checked;
-    const value = useYears ? months / 12 : months;
-    const label = useYears ? "년" : "개월";
-    return `${formatNumber(value)} ${label}`;
+
+    const roundedMonths = Math.round(totalMonths);
+    const years = Math.floor(roundedMonths / 12);
+    const months = roundedMonths % 12;
+
+    if (years <= 0) {
+      return `${formatNumber(months)}개월`;
+    }
+    if (months <= 0) {
+      return `${formatNumber(years)}년`;
+    }
+    return `${formatNumber(years)}년 ${formatNumber(months)}개월`;
+  }
+
+  function buildPeriodValueMarkup(totalMonths) {
+    if (totalMonths === null || Number.isNaN(totalMonths)) {
+      return "-";
+    }
+
+    const roundedMonths = Math.round(totalMonths);
+    const yearsMonthsText = formatYearsMonths(roundedMonths);
+    const monthsText = `${formatNumber(roundedMonths)}개월`;
+    return `${yearsMonthsText} <span class="result__value-sub">(${monthsText})</span>`;
   }
 
   function truncateToOneDecimal(value) {
@@ -1792,14 +1812,14 @@ document.addEventListener("DOMContentLoaded", () => {
         Math.round(savingType === "deposit" ? depositAmount : monthlyAmount)
       );
       const roundedTarget = formatNumber(Math.round(target));
-      const roundedMonths = formatNumber(Math.round(periodMonths));
+      const periodText = formatYearsMonths(periodMonths);
       if (savingType === "deposit") {
         resultSummary.textContent =
-          `${roundedSavingAmount}원을 약 ${roundedMonths}개월 동안 예치하면, ` +
+          `${roundedSavingAmount}원을 약 ${periodText} 동안 예치하면, ` +
           `총 ${roundedTarget}원을 모을 수 있어요.`;
       } else {
         resultSummary.textContent =
-          `월 ${roundedSavingAmount}원씩 ${roundedMonths}개월 동안 납입하면, ` +
+          `월 ${roundedSavingAmount}원씩 ${periodText} 동안 납입하면, ` +
           `총 ${roundedTarget}원을 모을 수 있어요.`;
       }
       return;
@@ -1810,7 +1830,11 @@ document.addEventListener("DOMContentLoaded", () => {
       const period = calculateSavingPeriod();
       const truncatedPeriod =
         period === null || Number.isNaN(period) ? period : truncateToOneDecimal(period);
-      resultValue.textContent = formatPeriodValue(truncatedPeriod);
+      if (truncatedPeriod === null || Number.isNaN(truncatedPeriod)) {
+        resultValue.textContent = "-";
+      } else {
+        resultValue.innerHTML = buildPeriodValueMarkup(truncatedPeriod);
+      }
 
       if (
         truncatedPeriod === null ||
@@ -1825,15 +1849,15 @@ document.addEventListener("DOMContentLoaded", () => {
         Math.round(savingType === "deposit" ? depositAmount : monthlyAmount)
       );
       const roundedTarget = formatNumber(Math.round(targetValue));
-      const roundedMonths = formatNumber(Math.round(truncatedPeriod));
+      const periodText = formatYearsMonths(truncatedPeriod);
       if (savingType === "deposit") {
         resultSummary.textContent =
           `${roundedSavingAmount}원을 예치하면 목표 금액 ${roundedTarget}원을 ` +
-          `모으는 데 약 ${roundedMonths}개월 걸려요.`;
+          `모으는 데 약 ${periodText} 걸려요.`;
       } else {
         resultSummary.textContent =
           `월 ${roundedSavingAmount}원씩 납입하면 목표 금액 ${roundedTarget}원을 ` +
-          `모으는 데 약 ${roundedMonths}개월 걸려요.`;
+          `모으는 데 약 ${periodText} 걸려요.`;
       }
       return;
     }
@@ -1855,14 +1879,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const roundedSavingAmount = formatNumber(Math.round(monthly));
       const roundedTarget = formatNumber(Math.round(targetValue));
-      const roundedMonths = formatNumber(Math.round(periodMonths));
+      const periodText = formatYearsMonths(periodMonths);
       if (savingType === "deposit") {
         resultSummary.textContent =
-          `목표 금액 ${roundedTarget}원을 ${roundedMonths}개월 동안 모으려면 ` +
+          `목표 금액 ${roundedTarget}원을 ${periodText} 동안 모으려면 ` +
           `예치금은 약 ${roundedSavingAmount}원이에요.`;
       } else {
         resultSummary.textContent =
-          `목표 금액 ${roundedTarget}원을 ${roundedMonths}개월 동안 모으려면 ` +
+          `목표 금액 ${roundedTarget}원을 ${periodText} 동안 모으려면 ` +
           `월 납입액은 약 ${roundedSavingAmount}원이에요.`;
       }
     }
